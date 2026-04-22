@@ -33,6 +33,7 @@ export function DocumentDetail() {
   const userId = user?.id ?? 'guest';
 
   const [isSaved, setIsSaved] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMobilePreview, setShowMobilePreview] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -128,6 +129,8 @@ export function DocumentDetail() {
   const { vatableSales: derivedVatableSales, vat: derivedVat, zeroRatedSales: derivedZeroRated } = computeTax(derivedTotal, formData.taxType);
 
   const handleSave = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       const updatedStatus: DocumentStatus = 'Submitted';
 
@@ -172,7 +175,7 @@ export function DocumentDetail() {
         apiFormData.append('receiptImage', imageBlob, `receipt.${ext}`);
       }
 
-      const baseUrl = import.meta.env.DEV
+      const baseUrl = (import.meta.env.DEV || (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('capacitor')))
         ? '/api'
         : (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'https://desktop-0iik0rk.tail20a759.ts.net').replace(/\/+$/, '');
       const apiUrl = `${baseUrl}/project/save/rdis`;
@@ -214,6 +217,8 @@ export function DocumentDetail() {
         message: err instanceof Error ? err.message : 'Could not reach the RDIS server.', 
         type: 'error' 
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -394,19 +399,24 @@ Rules:
             </button>
             <button
               onClick={handleSave}
-              disabled={isSaved}
+              disabled={isSaved || isSubmitting}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 md:px-4 md:py-2 text-sm border border-transparent rounded-lg text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 isSaved ? 'bg-green-600 hover:bg-green-600' : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
-              {isSaved 
-                ? <CheckCircle2 className="h-4 w-4" /> 
-                : (formData.status === 'Submitted' ? <Save className="h-4 w-4" /> : <Send className="h-4 w-4 -ml-0.5" />)
-              }
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isSaved ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                formData.status === 'Submitted' ? <Save className="h-4 w-4" /> : <Send className="h-4 w-4 -ml-0.5" />
+              )}
               <span className="hidden sm:inline">
-                {isSaved 
-                  ? (formData.status === 'Submitted' && originalDoc?.status === 'Submitted' ? 'Updated!' : 'Submitted!') 
-                  : (formData.status === 'Submitted' ? 'Update Document' : 'Submit Document')}
+                {isSubmitting
+                  ? 'Submitting…'
+                  : isSaved
+                    ? (formData.status === 'Submitted' && originalDoc?.status === 'Submitted' ? 'Updated!' : 'Submitted!')
+                    : (formData.status === 'Submitted' ? 'Update Document' : 'Submit Document')}
               </span>
             </button>
           </div>
