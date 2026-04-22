@@ -1,6 +1,6 @@
 const DEFAULT_API_BASE_URL = 'https://desktop-0iik0rk.tail20a759.ts.net';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
-const API_URL = import.meta.env.DEV ? '/api' : API_BASE_URL;
+const API_URL = (import.meta.env.DEV || (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('capacitor'))) ? '/api' : API_BASE_URL;
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem('aa2000-auth-token');
