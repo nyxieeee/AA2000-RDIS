@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 export function MainLayout() {
   const location = useLocation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isAuthBootstrapping = useAuthStore((state) => state.isAuthBootstrapping);
   const fetchDocuments = useDocumentStore((state) => state.fetchDocuments);
   const fetchWorkspace = useWorkspaceStore((state) => state.fetchWorkspace);
 
@@ -20,8 +21,16 @@ export function MainLayout() {
     }
   }, [isAuthenticated, fetchDocuments, fetchWorkspace]);
 
+  if (isAuthBootstrapping) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[--bg-page] text-[--text-secondary]">
+        Verifying session...
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/session-required" replace />;
   }
 
   return (

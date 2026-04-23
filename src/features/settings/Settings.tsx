@@ -3,6 +3,7 @@ import {
   Monitor, Smartphone, ShieldCheck, Key, RefreshCw, AlertCircle, CheckCircle2 
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import type { User } from '../../types';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useDocumentStore } from '../../store/useDocumentStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
@@ -18,6 +19,80 @@ function SectionHeader({ title }: { title: string }) {
     <h3 className="text-lg font-semibold text-[--text-primary] border-b border-[--border-subtle] pb-2 mb-4">
       {title}
     </h3>
+  );
+}
+
+function readRecordString(record: Record<string, unknown> | null | undefined, keys: string[]): string {
+  if (!record) return '';
+  for (const key of keys) {
+    const value = record[key];
+    if (value == null) continue;
+    const s = String(value).trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+function formatSessionStart(iso: string): string {
+  if (!iso) return 'N/A';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function resolveUserDetailsView(user: User) {
+  const account = user.launchDetails?.account ?? null;
+  const session = user.launchDetails?.session ?? null;
+
+  const username =
+    user.username ||
+    readRecordString(account, ['username', 'acc_username', 'user_name', 'email', 'acc_email']) ||
+    'N/A';
+  const accountId =
+    user.accountId ||
+    user.id ||
+    readRecordString(account, ['acc_ID', 'acc_id', 'accountId']) ||
+    'N/A';
+  const role =
+    readRecordString(account, ['role_name', 'role', 'role_ID']) ||
+    (user.role ? String(user.role) : 'N/A');
+  const status = readRecordString(account, ['status', 'acc_status', 'account_status']) || 'N/A';
+  const sessionStarted = formatSessionStart(
+    readRecordString(session, ['createdAt', 'created_at', 'updatedAt', 'updated_at']),
+  );
+
+  return { username, accountId, role, status, sessionStarted };
+}
+
+function AccountDetailsPanel({ user }: { user: User }) {
+  const details = resolveUserDetailsView(user);
+  return (
+    <section className="mb-8 rounded-xl border border-[--border-default] bg-[--bg-raised] p-5 md:p-6">
+      <h4 className="text-base font-semibold text-[--text-primary]">Your account</h4>
+      <p className="text-xs text-[--text-muted] mt-1">Credentials for the user currently signed in.</p>
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[
+          { label: 'Username', value: details.username },
+          { label: 'Account ID', value: details.accountId },
+          { label: 'Role', value: details.role },
+          { label: 'Account status', value: details.status },
+          { label: 'Session started', value: details.sessionStarted },
+        ].map((item) => (
+          <div key={item.label}>
+            <label className="block text-sm font-medium text-[--text-secondary] mb-1">{item.label}</label>
+            <div className="w-full border border-[--border-default] bg-[--bg-surface] text-[--text-primary] rounded-lg py-2 px-3 shadow-sm">
+              {item.value}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -192,6 +267,7 @@ function AccountantSettings() {
           {tab === 'Profile' && (
             <section>
               <SectionHeader title="Your Identity" />
+              {user ? <AccountDetailsPanel user={user} /> : null}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <EditableField label="First Name" value={profile.firstName} onChange={(v) => setProfile(p => ({ ...p, firstName: v }))} />
                 <EditableField label="Last Name" value={profile.lastName} onChange={(v) => setProfile(p => ({ ...p, lastName: v }))} />
@@ -457,6 +533,7 @@ function ExecutiveSettings() {
           {tab === 'General' && (
             <section>
               <SectionHeader title="Your Executive Profile" />
+              {user ? <AccountDetailsPanel user={user} /> : null}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <EditableField label="First Name" value={profile.firstName} onChange={(v) => setProfile(p => ({ ...p, firstName: v }))} />
                 <EditableField label="Last Name" value={profile.lastName} onChange={(v) => setProfile(p => ({ ...p, lastName: v }))} />
@@ -841,3 +918,7 @@ export function Settings() {
   if (!user) return null;
   return isExec(user.role) ? <ExecutiveSettings /> : <AccountantSettings />;
 }
+
+
+
+  

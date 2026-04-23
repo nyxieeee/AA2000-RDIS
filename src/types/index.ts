@@ -68,6 +68,14 @@ export interface User {
   firstName: string;
   lastName: string;
   darkMode: boolean;
+  username?: string;
+  accountId?: string;
+  sessionToken?: string;
+  launchDetails?: {
+    account: Record<string, unknown> | null;
+    employee: Record<string, unknown> | null;
+    session: Record<string, unknown> | null;
+  };
 }
 
 export interface Workspace {

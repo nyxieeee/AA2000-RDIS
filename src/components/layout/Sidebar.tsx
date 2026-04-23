@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, UploadCloud, Files, BarChart3,
   Download, FileText, Settings, BrainCircuit,
-  User as UserIcon, LogOut, ChevronLeft, ChevronRight
+  UserCircle, User as UserIcon, LogOut, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -21,6 +21,7 @@ const hasAccess = (allowedRoles: string[], userRole?: string) => {
 
 const navItems = [
   { name: 'Dashboard',    path: '/dashboard', icon: LayoutDashboard, roles: allRoles },
+  { name: 'Profile',      path: '/profile',   icon: UserCircle,      roles: allRoles },
   { name: 'ScanHub',      path: '/scanhub',   icon: UploadCloud,     roles: allRoles },
   { name: 'Documents',    path: '/documents', icon: Files,           roles: allRoles },
   { name: 'Analytics',    path: '/analytics', icon: BarChart3,       roles: allRoles },

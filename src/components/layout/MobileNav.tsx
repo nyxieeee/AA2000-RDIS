@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, UploadCloud, Files, BarChart3,
-  BrainCircuit, Settings, FileText
+  BrainCircuit, Settings, FileText, UserCircle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -19,6 +19,7 @@ const hasAccess = (allowedRoles: string[], userRole?: string) => {
 
 const mobileNavItems = [
   { name: 'Home', path: '/dashboard', icon: LayoutDashboard, roles: allRoles },
+  { name: 'Profile', path: '/profile', icon: UserCircle, roles: allRoles },
   { name: 'Scan', path: '/scanhub', icon: UploadCloud, roles: allRoles },
   { name: 'Docs', path: '/documents', icon: Files, roles: allRoles },
   { name: 'BIR', path: '/filing', icon: FileText, roles: ['Accountant'] as string[] },
