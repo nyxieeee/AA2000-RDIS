@@ -22,7 +22,7 @@ async function preprocessImage(imageSource: File | Blob): Promise<{ base64: stri
       }
 
       // Limit size for optimal AI processing while maintaining clarity
-      const MAX_SIZE = 1600;
+      const MAX_SIZE = 2560;
       let width = img.width;
       let height = img.height;
 
@@ -63,7 +63,7 @@ async function preprocessImage(imageSource: File | Blob): Promise<{ base64: stri
       }
       
       ctx.putImageData(imageData, 0, 0);
-      const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+      const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
       resolve({ base64, mediaType: 'image/jpeg' });
     };
     img.onerror = () => reject(new Error('Failed to process image'));
