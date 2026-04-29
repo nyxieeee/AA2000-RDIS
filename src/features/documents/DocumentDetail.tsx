@@ -752,29 +752,9 @@ Rules:
                 {hoverPos && zoom < 3 && (() => {
                   const img = imgRef.current;
                   if (!img) return null;
-                  const ir = img.getBoundingClientRect();
                   const vr = viewerRef.current!.getBoundingClientRect();
                   const LENS = 200;
                   const MAG = 3.5;
-                  // Map viewer hover → unrotated layout coords (same space as background-image),
-                  // undoing rotate(zoom) around element center (matches typical 0/90/180/270 use).
-                  const rcx = ir.left - vr.left + ir.width / 2;
-                  const rcy = ir.top - vr.top + ir.height / 2;
-                  const w0 = img.offsetWidth;
-                  const h0 = img.offsetHeight;
-                  let dx = hoverPos.x - rcx;
-                  let dy = hoverPos.y - rcy;
-                  const rad = (-rotation * Math.PI) / 180;
-                  let ex = dx * Math.cos(rad) - dy * Math.sin(rad);
-                  let ey = dx * Math.sin(rad) + dy * Math.cos(rad);
-                  ex /= zoom;
-                  ey /= zoom;
-                  const ux = Math.max(0, Math.min(w0, ex + w0 / 2));
-                  const uy = Math.max(0, Math.min(h0, ey + h0 / 2));
-                  const bgW = w0 * MAG;
-                  const bgH = h0 * MAG;
-                  const bgX = -(ux * MAG - LENS / 2);
-                  const bgY = -(uy * MAG - LENS / 2);
                   const viewerW = vr.width;
                   const viewerH = vr.height;
                   const clampedLeft = Math.max(0, Math.min(hoverPos.x - LENS / 2, viewerW - LENS));
@@ -786,13 +766,42 @@ Rules:
                         width: LENS, height: LENS,
                         left: clampedLeft,
                         top: clampedTop,
-                        backgroundImage: `url(${imageSrc})`,
-                        backgroundSize: `${bgW}px ${bgH}px`,
-                        backgroundPosition: `${bgX}px ${bgY}px`,
-                        backgroundRepeat: 'no-repeat',
+                        background: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.5)',
                         backdropFilter: 'blur(4px)',
                       }}
-                    />
+                    >
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          transformOrigin: 'top left',
+                          transform: `translate(${LENS / 2 - hoverPos.x * MAG}px, ${LENS / 2 - hoverPos.y * MAG}px) scale(${MAG})`,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: viewerW,
+                            height: viewerH,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <img
+                            src={imageSrc}
+                            alt=""
+                            draggable={false}
+                            className={`rounded-sm border ${isDark ? 'border-white/10' : 'border-black/5'}`}
+                            style={{
+                              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
+                              transformOrigin: 'center center',
+                              maxHeight: '90%',
+                              maxWidth: '90%',
+                              objectFit: 'contain',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   );
                 })()}
               </>
