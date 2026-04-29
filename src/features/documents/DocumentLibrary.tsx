@@ -112,8 +112,10 @@ async function exportToExcel(docs: DocumentRecord[], filter: DateFilterState) {
     ws.mergeCells('M4:N4');
 
     // Data rows starting at row 6
-    rows.forEach((doc, i) => {
-      const rowNum = 6 + i;
+    rows.forEach((doc) => {
+      const vatable = Number(doc.vatableSales) || 0;
+      const inputTax = Number(doc.vat) || 0;
+      const nonVat = Number(doc.zeroRatedSales) || 0;
       const dataRow = ws.addRow([
         null,
         new Date(doc.date + 'T00:00:00'), // B — DATE
@@ -127,9 +129,9 @@ async function exportToExcel(docs: DocumentRecord[], filter: DateFilterState) {
         null,                              // J — CHECK NO. (blank)
         'SALES INVOICE',                   // K — REFERENCE RECEIPT
         doc.docNum,                        // L — RECEIPT NUMBER
-        { formula: `(P${rowNum}-N${rowNum})/1.12` }, // M — VAT
-        null,                              // N — NON-VAT
-        { formula: `M${rowNum}*0.12` },    // O — INPUT TAX
+        vatable,                           // M — VATABLE PURCHASES (operating expenses VAT)
+        nonVat,                            // N — NON-VAT
+        inputTax,                          // O — INPUT TAX
         doc.total,                         // P — INVOICE AMOUNT
       ]);
       dataRow.getCell('B').numFmt = 'mm/dd/yyyy;@';

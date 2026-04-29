@@ -52,13 +52,14 @@ async function buildPurchasesWorkbook(
     ]);
     hdr2.font = { bold: true };
     hdr2.alignment = { horizontal: 'center', wrapText: true };
-    rows.forEach((doc, i) => {
-      const rowNum = 6 + i;
+    rows.forEach((doc) => {
+      const vatable = Number(doc.vatableSales) || 0;
+      const inputTax = Number(doc.vat) || 0;
+      const nonVat = Number(doc.zeroRatedSales) || 0;
       ws.addRow([
         null, doc.date, null, null, doc.taxId, doc.category,
         doc.vendor, doc.registeredAddress || '', null, null, 'SALES INVOICE', doc.docNum,
-        { formula: `(P${rowNum}-N${rowNum})/1.12` }, null,
-        { formula: `M${rowNum}*0.12` }, doc.total,
+        vatable, nonVat, inputTax, doc.total,
       ]);
     });
   });
@@ -110,14 +111,15 @@ async function buildVatSalesWorkbook(
     ]);
     hdr.font = { bold: true };
     hdr.alignment = { horizontal: 'center', wrapText: true };
-    rows.forEach((doc, i) => {
-      const rowNum = 10 + i;
+    rows.forEach((doc) => {
+      const vatable = Number(doc.vatableSales) || 0;
+      const vat = Number(doc.vat) || 0;
       ws.addRow([
         null, doc.date, doc.vendor, doc.taxId, doc.registeredAddress || '',
         'SALES INVOICE', doc.docNum,
-        { formula: `J${rowNum}/1.12` }, { formula: `H${rowNum}*0.12` },
+        vatable, vat,
         doc.total, null, null, null,
-        { formula: `J${rowNum}-K${rowNum}-L${rowNum}-M${rowNum}` },
+        doc.total,
       ]);
     });
   });
@@ -260,7 +262,7 @@ export function Exports() {
               <span><b>M</b> → VAT Exp. (formula)</span><span><b>O</b> → Input Tax (formula)</span>
               <span><b>P</b> → Invoice Amount</span>
             </div>
-            <p className="text-xs text-[--text-muted] mt-2">One sheet per month. Formulas M=(P-N)/1.12 and O=M×0.12 are preserved.</p>
+            <p className="text-xs text-[--text-muted] mt-2">One sheet per month. VAT, NON-VAT, and INPUT TAX are exported from extracted document values.</p>
           </section>
         )}
         {exportType === 'vat' && (
