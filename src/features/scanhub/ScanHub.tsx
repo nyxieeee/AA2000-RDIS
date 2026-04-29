@@ -80,9 +80,9 @@ async function preprocessImage(imageSource: File | Blob): Promise<{ base64: stri
         return;
       }
 
-      // Keep detail high: downscale huge images, upscale tiny ones.
-      const MAX_SIZE = 4096;
-      const MIN_SIZE = 1600;
+      // Balance OCR detail vs API payload limits (Groq/proxies reject huge bodies; PNG@4096 often 413).
+      const MAX_SIZE = 2048;
+      const MIN_SIZE = 1400;
       let width = img.width;
       let height = img.height;
 
@@ -122,9 +122,20 @@ async function preprocessImage(imageSource: File | Blob): Promise<{ base64: stri
       }
       
       ctx.putImageData(imageData, 0, 0);
-      // Use PNG to avoid JPEG artifacts on tiny receipt text.
-      const base64 = canvas.toDataURL('image/png').split(',')[1];
-      resolve({ base64, mediaType: 'image/png' });
+      // JPEG keeps payload small enough for Groq; high quality preserves receipt text.
+      const JPEG_QUALITY = 0.92;
+      let q = JPEG_QUALITY;
+      let dataUrl = canvas.toDataURL('image/jpeg', q);
+      // ~3.5M base64 chars ≈ 2.6MB binary — stay under common proxy limits
+      const MAX_BASE64_CHARS = 3_200_000;
+      let base64 = '';
+      while (q > 0.5) {
+        dataUrl = canvas.toDataURL('image/jpeg', q);
+        base64 = dataUrl.split(',')[1] ?? '';
+        if (base64.length <= MAX_BASE64_CHARS) break;
+        q -= 0.07;
+      }
+      resolve({ base64, mediaType: 'image/jpeg' });
     };
     img.onerror = () => reject(new Error('Failed to process image'));
     img.src = url;
@@ -394,9 +405,13 @@ export function ScanHub() {
       navigate(`/documents/${doc.id}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to process document. Please try again.';
-      setError(msg.includes('fetch') || msg.includes('NetworkError')
-        ? 'Cannot reach Groq API. Please check your internet connection.'
-        : msg);
+      if (/413|too large|entity too large/i.test(msg)) {
+        setError('Image payload too large for the API. Try a smaller photo or lower-resolution file.');
+      } else {
+        setError(msg.includes('fetch') || msg.includes('NetworkError')
+          ? 'Cannot reach Groq API. Please check your internet connection.'
+          : msg);
+      }
     } finally {
       setIsProcessing(false);
       setProcessingStep('');
@@ -422,9 +437,13 @@ export function ScanHub() {
       navigate(`/documents/${doc.id}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to process captured image. Please try again.';
-      setError(msg.includes('fetch') || msg.includes('NetworkError')
-        ? 'Cannot reach Groq API. Please check your internet connection.'
-        : msg);
+      if (/413|too large|entity too large/i.test(msg)) {
+        setError('Image payload too large for the API. Try a smaller photo or lower-resolution file.');
+      } else {
+        setError(msg.includes('fetch') || msg.includes('NetworkError')
+          ? 'Cannot reach Groq API. Please check your internet connection.'
+          : msg);
+      }
     } finally {
       setIsProcessing(false);
       setProcessingStep('');
