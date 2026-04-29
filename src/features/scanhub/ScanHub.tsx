@@ -6,7 +6,7 @@ import { buildDocumentRecord } from './scanUtils';
 import type { ExtractedData } from './scanUtils';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const GEMINI_VISION_MODEL = 'gemini-1.5-flash';
+const GEMINI_VISION_MODEL = 'gemini-2.5-flash';
 
 async function preprocessImage(imageSource: File | Blob): Promise<{ base64: string; mediaType: string }> {
   return new Promise((resolve, reject) => {
