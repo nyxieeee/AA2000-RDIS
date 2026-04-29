@@ -8,6 +8,57 @@ import type { ExtractedData } from './scanUtils';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GEMINI_VISION_MODEL = 'gemini-2.5-flash';
 
+function parseJsonObjectFromModelText(rawText: string): ExtractedData {
+  const text = rawText.replace(/```json\s*|```/gi, '').trim();
+
+  try {
+    return JSON.parse(text) as ExtractedData;
+  } catch {
+    // Fallback for cases where Gemini adds extra prose around JSON.
+  }
+
+  const start = text.indexOf('{');
+  if (start === -1) throw new Error('Model returned invalid JSON. Please try again.');
+
+  let inString = false;
+  let escaped = false;
+  let depth = 0;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        const candidate = text.slice(start, i + 1);
+        try {
+          return JSON.parse(candidate) as ExtractedData;
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+
+  throw new Error('Model returned invalid JSON. Please try again.');
+}
+
 async function preprocessImage(imageSource: File | Blob): Promise<{ base64: string; mediaType: string }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -100,9 +151,7 @@ async function callGeminiVision(apiKey: string, base64: string, mediaType: strin
     candidates?: { content?: { parts?: { text?: string }[] } }[];
   };
   const rawText = data.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '{}';
-  const clean = rawText.replace(/```json\n?|\n?```/g, '').trim();
-  try { return JSON.parse(clean) as ExtractedData; }
-  catch { throw new Error('Model returned invalid JSON. Please try again.'); }
+  return parseJsonObjectFromModelText(rawText);
 }
 
 // ── Camera Modal ──────────────────────────────────────────────────────────────

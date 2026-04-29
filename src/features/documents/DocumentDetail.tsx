@@ -9,6 +9,57 @@ import { createPortal } from 'react-dom';
 import type { DocumentRecord, TaxType, DocumentStatus } from '../../types/document';
 import { apiFetch } from '../../lib/api';
 
+function parseJsonObjectFromModelText(rawText: string): Record<string, unknown> {
+  const text = rawText.replace(/```json\s*|```/gi, '').trim();
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    // Fallback for cases where Gemini adds extra prose around JSON.
+  }
+
+  const start = text.indexOf('{');
+  if (start === -1) throw new Error('Model returned invalid JSON. Please try again.');
+
+  let inString = false;
+  let escaped = false;
+  let depth = 0;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        const candidate = text.slice(start, i + 1);
+        try {
+          return JSON.parse(candidate) as Record<string, unknown>;
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+
+  throw new Error('Model returned invalid JSON. Please try again.');
+}
+
 function computeTax(total: number, taxType: TaxType = 'VAT') {
   switch (taxType) {
     case 'VAT': {
@@ -281,9 +332,7 @@ Rules:
         candidates?: { content?: { parts?: { text?: string }[] } }[];
       };
       const rawText = geminiData.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') ?? '';
-      // Strip optional markdown fences before parsing
-      const jsonText = rawText.replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
-      const extracted = JSON.parse(jsonText);
+      const extracted = parseJsonObjectFromModelText(rawText);
 
       const total = typeof extracted.totalAmount === 'number' ? extracted.totalAmount : formData.total;
       const vatableSales = typeof extracted.vatableSales === 'number' ? extracted.vatableSales : total / 1.12;
