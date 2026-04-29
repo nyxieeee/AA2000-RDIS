@@ -2,6 +2,8 @@ const DEFAULT_API_BASE_URL = 'https://desktop-0iik0rk.tail20a759.ts.net';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
 export const API_URL = (import.meta.env.DEV || (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('capacitor'))) ? '/api' : API_BASE_URL;
 
+type ApiError = Error & { status?: number };
+
 export async function apiFetch(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem('aa2000-auth-token');
 
@@ -24,7 +26,9 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}) {
     const error = await response
       .json()
       .catch(() => ({ error: `Request failed (${response.status} ${response.statusText})` }));
-    throw new Error(error.error || error.message || `Request failed with status ${response.status}`);
+    const apiError = new Error(error.error || error.message || `Request failed with status ${response.status}`) as ApiError;
+    apiError.status = response.status;
+    throw apiError;
   }
 
   return response.json();

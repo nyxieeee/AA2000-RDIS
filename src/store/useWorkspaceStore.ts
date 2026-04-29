@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { apiFetch } from '../lib/api';
 import type { Workspace } from '../types';
 
+type ApiError = Error & { status?: number };
+
 interface WorkspaceState {
   workspace: Workspace;
   fetchWorkspace: () => Promise<void>;
@@ -31,6 +33,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       const data = await apiFetch('/workspace');
       set({ workspace: data });
     } catch (err) {
+      const apiError = err as ApiError;
+      if (apiError.status === 404) {
+        // Some deployments do not expose /workspace; keep local defaults.
+        console.warn('Workspace endpoint not available (404). Using local defaults.');
+        return;
+      }
       console.error('Failed to fetch workspace:', err);
     }
   },
