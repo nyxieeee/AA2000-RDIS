@@ -7,6 +7,15 @@ interface ExtractedLineItem {
   net?: number;
 }
 
+/** Groq vision system role: line-item descriptions must be literal OCR, not invented products. */
+export const GROQ_RECEIPT_VISION_SYSTEM_PROMPT = `You are a receipt and invoice OCR engine. Output structured JSON when asked.
+
+Line items (strict):
+- Each lineItems[].description must be literal text visible on the document for that row — same words, not a paraphrase or "better" product name.
+- Never invent retail products (meat cuts, snacks, drinks, sizes) you do not read on the paper. Wrong: outputting a specific burger or brand when the slip says "Assorted Items", "Miscellaneous", "Various", or similar.
+- Sales invoices often have one handwritten or printed line under Particulars / Description / Items. If that is the only line, return exactly one lineItem and copy that line verbatim (including "Assorted Items").
+- If a line is unreadable, use description "" and say so in notes — do not substitute a plausible product.`;
+
 export function normalizeLineItemDescription(input?: string): string {
   const raw = (input || '').trim();
   if (!raw) return 'Item';
@@ -60,7 +69,8 @@ function detectTaxType(category?: string, vendor?: string): TaxType {
   const text = `${category ?? ''} ${vendor ?? ''}`.toLowerCase();
   if (/cinema|movie|amusement|entertainment|theatre|theater/.test(text)) return 'Amusement Tax';
   if (/zero.rated|export|overseas/.test(text)) return 'Zero-Rated';
-  if (/exempt|medicine|drug|pharma|grocery|food|vat.exempt/.test(text)) return 'Exempt';
+  // Do not treat generic "food"/"grocery" category as tax-exempt — many VAT receipts use Food.
+  if (/\bexempt\b|vat.?exempt|medicine|pharma|hospital|senior|pwd|person w\/ disability/i.test(text)) return 'Exempt';
   return 'VAT';
 }
 
@@ -83,7 +93,9 @@ export function buildDocumentRecord(
       ? extracted.lineItems
       : null;
   const aiTotal: number =
-    typeof extracted.totalAmount === 'number' ? extracted.totalAmount : 0;
+    typeof extracted.totalAmount === 'number' && extracted.totalAmount > 0
+      ? extracted.totalAmount
+      : 0;
   const lineItemTotal = rawLineItems
     ? parseFloat(
         rawLineItems
@@ -95,7 +107,18 @@ export function buildDocumentRecord(
           .toFixed(2),
       )
     : 0;
-  const total: number = lineItemTotal > 0 ? lineItemTotal : aiTotal;
+  // Prefer explicit document total from the model (matches printed Total Payable). Never let
+  // hallucinated line-item nets override the receipt total when both are present.
+  const total: number =
+    aiTotal > 0 ? aiTotal : lineItemTotal > 0 ? lineItemTotal : 0;
+
+  let lineTotalMismatch = '';
+  if (aiTotal > 0 && lineItemTotal > 0) {
+    const maxT = Math.max(aiTotal, lineItemTotal);
+    if (maxT > 0 && Math.abs(aiTotal - lineItemTotal) / maxT > 0.05) {
+      lineTotalMismatch = `Line item nets sum to ${lineItemTotal} but document total is ${aiTotal}; verify line items against the image.`;
+    }
+  }
 
   const lineItems = rawLineItems
     ? rawLineItems.map((li: ExtractedLineItem, i: number) => ({
@@ -145,10 +168,16 @@ export function buildDocumentRecord(
     vatableSales: parseFloat(vatableSales.toFixed(2)),
     vat: parseFloat(vat.toFixed(2)),
     zeroRatedSales: parseFloat(zeroRatedSales.toFixed(2)),
-    reviewReason:
-      confidence < 80
-        ? `Confidence at ${confidence}%. ${extracted.notes || 'Manual review recommended.'}`
-        : undefined,
+    reviewReason: (() => {
+      const parts: string[] = [];
+      if (confidence < 80) {
+        parts.push(`Confidence at ${confidence}%. ${extracted.notes || 'Manual review recommended.'}`);
+      } else if (extracted.notes) {
+        parts.push(extracted.notes);
+      }
+      if (lineTotalMismatch) parts.push(lineTotalMismatch);
+      return parts.length ? parts.join(' ') : undefined;
+    })(),
     imageData: base64,
     imageType: mediaType,
   };

@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { DocumentRecord, TaxType, DocumentStatus } from '../../types/document';
 import { apiFetch } from '../../lib/api';
-import { normalizeLineItemDescription } from '../scanhub/scanUtils';
+import { normalizeLineItemDescription, GROQ_RECEIPT_VISION_SYSTEM_PROMPT } from '../scanhub/scanUtils';
 
 function tryParseJsonLenient(text: string): Record<string, unknown> {
   const normalized = text
@@ -294,8 +294,10 @@ export function DocumentDetail() {
         },
         body: JSON.stringify({
           model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-          max_tokens: 1024,
+          max_tokens: 1400,
+          temperature: 0,
           messages: [
+            { role: 'system', content: GROQ_RECEIPT_VISION_SYSTEM_PROMPT },
             {
               role: 'user',
               content: [
@@ -314,26 +316,26 @@ export function DocumentDetail() {
   "documentType": "Receipt | Invoice | Bill | Other",
   "date": "YYYY-MM-DD",
   "paymentMethod": "Cash | Debit Card | GCash | Check | Other",
+  "taxType": "VAT | Exempt | Zero-Rated | Amusement Tax",
   "totalAmount": number,
   "vatableSales": number,
   "vat": number,
   "zeroRatedSales": number,
-  "lineItems": [{ "description": "string", "qty": number, "price": number, "net": number }],
+  "lineItems": [{ "description": "exact words from one row on the slip — never invented products", "qty": number, "price": number, "net": number }],
   "confidence": number (0-100),
   "notes": "string"
 }
 Rules:
-- vatableSales = totalAmount / 1.12 (for VAT receipts), vat = totalAmount - vatableSales
+- ANTI-HALLUCINATION (highest priority): Output only what is visible on THIS image. Never invent product names, line items, amounts, dates, or TINs. Never substitute memory of typical products for handwritten text (e.g. "Assorted Items" must stay "Assorted Items"). If unreadable, use "" or 0 and explain in notes.
+- date: only from the document; YYYY-MM-DD when readable. Never use today's date. If unreadable, use "".
+- totalAmount: use visible Total Payable / Grand Total / Amount Due. Prefer labeled payable total; note conflicts in notes. Do not invent totals.
+- taxType: from the document (VAT / exempt / zero-rated labels). When both VATable and VAT-exempt amounts appear, still choose the closest primary type and put breakdown in the three amount fields.
+- vatableSales / vat / zeroRatedSales: copy from explicit lines on the receipt when printed or handwritten. If the receipt shows all three, output them exactly. Only use totalAmount/1.12 math if those lines are missing but taxType is clearly VAT-only.
 - confidence: 90+ if all major fields found, 75-89 if some missing, below 75 if image is unclear
 - If a field cannot be determined, use an empty string or 0
-- lineItems description quality:
-  - preserve readable spaces between brand/product/variant/size words
-  - keep SKU/item code separate from product description
-  - keep units explicit (g, kg, ml, L, pcs)
-- handwriting-aware parsing:
-  - resolve likely OCR confusions (0/O, 1/I/l, 5/S, 8/B) only when context strongly supports it
-  - if the same handwritten value appears multiple times, prefer the clearest repeat
-  - do not guess unclear handwriting; keep empty string/0 and mention ambiguity in notes`,
+- lineItems: literal transcription per visible line; one row per line when rows exist. Invoice with a single Particulars/Description line (e.g. handwritten "Assorted Items") → one lineItem, that exact string — never substitute a specific retail product.
+- lineItems: preserve readable spacing when helpful without changing meaning.
+- handwriting: OCR confusions only with strong context; prefer clearest repeat; otherwise "" / 0 and notes`,
                 },
               ],
             },
@@ -350,9 +352,25 @@ Rules:
       const rawText = groqData.choices?.[0]?.message?.content ?? '';
       const extracted = parseJsonObjectFromModelText(rawText);
 
-      const total = typeof extracted.totalAmount === 'number' ? extracted.totalAmount : formData.total;
-      const vatableSales = typeof extracted.vatableSales === 'number' ? extracted.vatableSales : total / 1.12;
-      const vat = typeof extracted.vat === 'number' ? extracted.vat : total - vatableSales;
+      const total =
+        typeof extracted.totalAmount === 'number' && extracted.totalAmount > 0
+          ? extracted.totalAmount
+          : formData.total;
+
+      const allowedTax: TaxType[] = ['VAT', 'Exempt', 'Zero-Rated', 'Amusement Tax'];
+      const taxTypeMerged = allowedTax.includes(extracted.taxType as TaxType)
+        ? (extracted.taxType as TaxType)
+        : formData.taxType || 'VAT';
+
+      const hasFullTaxBreakdown =
+        typeof extracted.vatableSales === 'number' &&
+        typeof extracted.vat === 'number' &&
+        typeof extracted.zeroRatedSales === 'number';
+      const derivedTax = computeTax(total, taxTypeMerged);
+      const vatableSales = hasFullTaxBreakdown ? (extracted.vatableSales as number) : derivedTax.vatableSales;
+      const vat = hasFullTaxBreakdown ? (extracted.vat as number) : derivedTax.vat;
+      const zeroRatedSales = hasFullTaxBreakdown ? (extracted.zeroRatedSales as number) : derivedTax.zeroRatedSales;
+
       const confidence = typeof extracted.confidence === 'number' ? Math.min(100, Math.max(0, extracted.confidence)) : formData.confidence;
 
       const lineItems = Array.isArray(extracted.lineItems) && extracted.lineItems.length > 0
@@ -367,6 +385,15 @@ Rules:
         }))
         : formData.lineItems;
 
+      const lineSum = lineItems.reduce((s, li) => s + (Number(li.net) || 0), 0);
+      let mismatch = '';
+      if (total > 0 && lineSum > 0) {
+        const maxT = Math.max(total, lineSum);
+        if (maxT > 0 && Math.abs(total - lineSum) / maxT > 0.05) {
+          mismatch = ` Line item nets sum to ${lineSum} but total is ${total}; verify line items against the image.`;
+        }
+      }
+
       const updated: Partial<DocumentRecord> = {
         vendor: extracted.vendor || formData.vendor,
         registeredAddress: (extracted.registeredAddress as string) || formData.registeredAddress || '',
@@ -374,13 +401,14 @@ Rules:
         docNum: (extracted.documentNumber && extracted.documentNumber.length > 1) ? extracted.documentNumber : formData.docNum,
         date: (extracted.date && /^\d{4}-\d{2}-\d{2}$/.test(extracted.date)) ? extracted.date : formData.date,
         paymentMethod: (extracted.paymentMethod as string) || formData.paymentMethod,
+        taxType: taxTypeMerged,
         total,
         vatableSales: parseFloat(vatableSales.toFixed(2)),
         vat: parseFloat(vat.toFixed(2)),
-        zeroRatedSales: typeof extracted.zeroRatedSales === 'number' ? extracted.zeroRatedSales : 0,
+        zeroRatedSales: parseFloat(zeroRatedSales.toFixed(2)),
         confidence,
         lineItems,
-        reviewReason: `Reprocessed via Groq Vision AI. Confidence: ${confidence}%. ${extracted.notes || ''}`,
+        reviewReason: `Reprocessed via Groq Vision AI. Confidence: ${confidence}%. ${extracted.notes || ''}${mismatch}`,
         status: 'Auto OK',
       };
 

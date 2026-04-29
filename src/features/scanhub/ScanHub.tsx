@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDocumentStore } from '../../store/useDocumentStore';
 import { Loader2, FileText, AlertCircle, Sparkles, Camera, X, ZoomIn, FlipHorizontal, RotateCcw } from 'lucide-react';
-import { buildDocumentRecord } from './scanUtils';
+import { buildDocumentRecord, GROQ_RECEIPT_VISION_SYSTEM_PROMPT } from './scanUtils';
 import type { ExtractedData } from './scanUtils';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
@@ -162,38 +162,38 @@ Required JSON structure:
   "vat": 0,
   "zeroRatedSales": 0,
   "lineItems": [
-    { "description": "item name", "qty": 1, "price": 0.00, "net": 0.00 }
+    { "description": "exact words from one row on the slip — never an invented product name", "qty": 1, "price": 0.00, "net": 0.00 }
   ],
   "confidence": 85,
   "notes": "any relevant notes about document quality or ambiguous fields"
 }
 
 Rules:
-- totalAmount, vatableSales, vat, zeroRatedSales must be plain numbers (no currency symbols)
-- If taxType is VAT: vatableSales = totalAmount / 1.12, vat = totalAmount - vatableSales, zeroRatedSales = 0
+- ANTI-HALLUCINATION (highest priority): Every field must be transcribed from text or numbers you can actually see in THIS image only. Never invent product names, brands, line items, prices, quantities, dates, or TINs. Never replace handwritten text with plausible grocery items from memory (e.g. if you see "Assorted Items", output exactly that — not a random product). If something is not legible, use "" for strings or 0 for numbers and explain in "notes".
+- date: only from the document (printed or handwritten). Convert to YYYY-MM-DD when you can read the date. Never use today's date, never guess a year. If the date cannot be read, use "".
+- totalAmount: use the clearest visible total on the document (e.g. Total Payable, Grand Total, Amount Due). If several totals appear, prefer the one explicitly labeled as payable/grand total and note conflicts in "notes". Do not invent a total that does not appear.
+- totalAmount, vatableSales, vat, zeroRatedSales must be plain numbers (no currency symbols). Prefer amounts explicitly printed/written on the document; only apply VAT math if those fields are not shown but taxType is clearly VAT and you have a single reliable total.
+- If taxType is VAT: vatableSales = totalAmount / 1.12, vat = totalAmount - vatableSales, zeroRatedSales = 0 (only when you are not copying explicit vatable/VAT lines from the image)
 - If taxType is Zero-Rated or Exempt: vatableSales = 0, vat = 0, zeroRatedSales = totalAmount
 - confidence: 95+ very clear, 80-94 readable, 60-79 uncertain fields, below 60 poor quality
-- lineItems: extract actual items if visible; otherwise use a single item with the total
-- lineItems description quality:
-  - preserve product wording with readable spaces between brand, product, variant, and size
-  - keep SKU/item codes separate from product description text
-  - keep quantity/size tokens explicit (e.g., "160 g", "1.5 L", "2 pcs")
+- lineItems: one row per visible line. Descriptions = copy-paste from the image only (handwritten or printed). Invoice/sales-invoice layout: one line under Particulars or Description (e.g. "Assorted Items") → exactly one lineItem with that exact string — never replace with a specific grocery product you imagined.
+- lineItems: if the slip has no itemized list and only a lump label, a single lineItem with that label is correct; qty often 1; use amounts shown on that row or align net with totalAmount only when no per-line amounts exist.
+- lineItems description spacing: minor spacing fixes only; never change the words.
 - documentType defaults to Receipt if unclear
-- handwriting-aware parsing:
-  - for handwritten digits/letters, resolve likely OCR confusions (0/O, 1/I/l, 5/S, 8/B) only when context strongly supports it
-  - prefer the most legible repeated value when totals or dates appear multiple times
-  - do NOT invent unclear handwritten text; return empty string/0 for low-confidence fields
-  - when uncertain on handwriting, include short ambiguity notes (e.g. "TIN middle group could be 3 or 8")`;
+- handwriting: fix obvious OCR confusions (0/O, 1/I/l, 5/S, 8/B) only when context strongly supports it; prefer repeated clearer values; if uncertain, "" / 0 and short note in "notes"`;
 
   const response = await fetch(GROQ_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: GROQ_VISION_MODEL,
-      messages: [{ role: 'user', content: [
-        { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
-        { type: 'text', text: prompt },
-      ]}],
+      messages: [
+        { role: 'system', content: GROQ_RECEIPT_VISION_SYSTEM_PROMPT },
+        { role: 'user', content: [
+          { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
+          { type: 'text', text: prompt },
+        ]},
+      ],
       max_tokens: 1400,
       temperature: 0,
     }),
