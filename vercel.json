@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://desktop-0iik0rk.tail20a759.ts.net/:path*"
+      "destination": "https://desktop-0iik0rk.tail78436b.ts.net/:path*"
     },
     {
       "source": "/(.*)",
